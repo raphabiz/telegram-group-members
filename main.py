@@ -1,3 +1,9 @@
+"""
+
+@RAPHABIZ
+
+"""
+
 import time
 from telethon import TelegramClient
 from telethon.errors.rpcerrorlist import SessionExpiredError
@@ -13,7 +19,9 @@ from telethon.sessions import StringSession
 import asyncio
 from datetime import datetime
 from telethon import functions, types
-from telethon.tl.types import ChannelParticipantsAdmins
+from telethon.tl.types import ChannelParticipantCreator , ChannelParticipantAdmin,ChannelParticipantsAdmins
+
+from telethon.tl.types import MessageActionChatAddUser
 
 load_dotenv()
 
@@ -126,6 +134,39 @@ class Participants:
         except FileNotFoundError:
             return None
         
+  
+  def get_member_type(self,member):
+
+    user_type = 'participant'
+    if (type(member.participant) == ChannelParticipantAdmin):
+        user_type = 'admin'
+    if (type(member.participant) == ChannelParticipantCreator):
+        user_type = 'owner'
+    return user_type
+  
+  async def process_joining_messages(self, client, entity):
+        
+        # fetch all admins users 
+        await self.process_users(client, entity)
+
+        # recup chat entity from username 
+        columns = ['id', 'first_name', 'last_name', 'username', 'about', 'date', 'collectDate','role']
+        async for message in client.iter_messages(entity):
+            if isinstance(message.action, MessageActionChatAddUser):
+
+                full = await client(functions.users.GetFullUserRequest(id=message.action.users[0]))
+
+                participant = {
+                    "id": message.action.users[0],
+                    "first_name": full.users[0].first_name,
+                    "last_name": full.users[0].last_name,
+                    "username": full.users[0].username,
+                    "about": full.full_user.about,
+                    "collectDate": datetime.now().strftime('%Y-%m-%d %H:%M:%S%z'),
+                    "role":'participant'
+                } 
+                self.save_to_csv(part=participant,columns=columns,csvfilename=entity.username)
+
 
 
   async def process_messages(self, client, entity):
@@ -145,7 +186,7 @@ class Participants:
             self.save_to_csv(part=participant,columns=columns,csvfilename=entity.username) 
 
   async def process_users(self, client, entity):
-        columns = ['id', 'first_name', 'last_name', 'username', 'about', 'collectDate']
+        columns = ['id', 'first_name', 'last_name', 'username', 'about', 'collectDate','role']
         async for participant in client.iter_participants(entity):
                 # recup full user to get about variable
                 full = await client(functions.users.GetFullUserRequest(id=participant.id))
@@ -155,10 +196,10 @@ class Participants:
                     "last_name": participant.last_name,
                     "username": participant.username,
                     "about": full.full_user.about,
-                    "collectDate": datetime.now().strftime('%Y-%m-%d %H:%M:%S%z')
+                    "collectDate": datetime.now().strftime('%Y-%m-%d %H:%M:%S%z'),
+                    "role": self.get_member_type(member=participant)
                 }
                 self.save_to_csv(part=participant,columns=columns,csvfilename=entity.username)
-
 
 
   async def can_read_members(self,client,chat):
@@ -179,6 +220,7 @@ class Participants:
             return "Private"
       else:
             return "Public"
+      
       
   async def get_group_participants(self,url):
 
@@ -202,7 +244,7 @@ class Participants:
         if grouptype == "Public":
             await self.process_users(client, chat)
         else :
-            await self.process_messages(client, chat)
+            await self.process_joining_messages(client, chat)
 
 participants =Participants()
-asyncio.run(participants.get_group_participants("https://web.telegram.org/k/#@token2049official"))
+asyncio.run(participants.get_group_participants("https://web.telegram.org/k/#@supermooncamp"))
